@@ -1,0 +1,13 @@
+f: namei1/namei2/a
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei1
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei2
+ - system_u:object_r:svirt_sandbox_file_t:s0 a
+f: namei1/namei2/b
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei1
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei2
+ - system_u:object_r:svirt_sandbox_file_t:s0 b
+f: namei1/namei2/a/b
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei1
+ d system_u:object_r:svirt_sandbox_file_t:s0 namei2
+ - system_u:object_r:svirt_sandbox_file_t:s0 a
+   b - No such file or directory

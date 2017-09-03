@@ -40,6 +40,10 @@
 #include "closestream.h"
 #include "idcache.h"
 
+#ifdef HAVE_LIBSELINUX
+# include <selinux/selinux.h>
+#endif
+
 #ifndef MAXSYMLINKS
 #define MAXSYMLINKS 256
 #endif
@@ -49,6 +53,7 @@
 #define NAMEI_MNTS	(1 << 3)
 #define NAMEI_OWNERS	(1 << 4)
 #define NAMEI_VERTICAL	(1 << 5)
+#define NAMEI_CONTEXT	(1 << 6)
 
 
 struct namei {
@@ -60,6 +65,9 @@ struct namei {
 	int		level;
 	int		mountpoint;	/* is mount point */
 	int		noent;		/* is this item not existing */
+#ifdef HAVE_LIBSELINUX
+	char		*context;	/* security context */
+#endif
 };
 
 static int flags;
@@ -174,6 +182,12 @@ new_namei(struct namei *parent, const char *path, const char *fname, int lev)
 		           sb->st_ino == nm->st.st_ino))    /* root directory */
 			nm->mountpoint = 1;
 	}
+#ifdef HAVE_LIBSELINUX
+	if (flags & NAMEI_CONTEXT) {
+		// TODO: lgetfilecon returns string length or errno, should we be testing it?
+		lgetfilecon (path, &nm->context);
+	}
+#endif
 
 	return nm;
 }
@@ -263,9 +277,23 @@ static int
 print_namei(struct namei *nm, char *path)
 {
 	int i;
+#ifdef HAVE_LIBSELINUX
+	unsigned int max_context_length = 0;
+#endif
+	
 
 	if (path)
 		printf("f: %s\n", path);
+
+#ifdef HAVE_LIBSELINUX
+	/* Scan for longest security context on this nm */
+	struct namei *nm_iter = nm;
+	for (; nm_iter; nm_iter = nm_iter->next) {
+		if (nm_iter->context && strlen(nm_iter->context) > max_context_length){
+			max_context_length = strlen(nm_iter->context);
+		}
+	}
+#endif
 
 	for (; nm; nm = nm->next) {
 		char md[11];
@@ -307,6 +335,12 @@ print_namei(struct namei *nm, char *path)
 				get_id(gcache, nm->st.st_gid)->name);
 		}
 
+#ifdef HAVE_LIBSELINUX
+		if (flags & NAMEI_CONTEXT) {
+			printf(" %-*s", max_context_length, nm->context);
+		}
+#endif
+
 		if (flags & NAMEI_VERTICAL)
 			for (i = 0; i < nm->level; i++)
 				fputs("  ", stdout);
@@ -342,7 +376,11 @@ static void __attribute__((__noreturn__)) usage(void)
 		" -o, --owners        show owner and group name of each file\n"
 		" -l, --long          use a long listing format (-m -o -v) \n"
 		" -n, --nosymlinks    don't follow symlinks\n"
-		" -v, --vertical      vertical align of modes and owners\n"), out);
+		" -v, --vertical      vertical align of modes and owners\n"
+#ifdef HAVE_LIBSELINUX
+		" -Z, --context       show security context\n"
+#endif
+	), out);
 	printf(USAGE_HELP_OPTIONS(21));
 
 	printf(USAGE_MAN_TAIL("namei(1)"));
@@ -359,6 +397,9 @@ static const struct option longopts[] =
 	{ "long",        no_argument, NULL, 'l' },
 	{ "nolinks",	 no_argument, NULL, 'n' },
 	{ "vertical",    no_argument, NULL, 'v' },
+#ifdef HAVE_LIBSELINUX
+	{ "context",    no_argument, NULL, 'Z' },
+#endif
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -373,7 +414,7 @@ main(int argc, char **argv)
 	textdomain(PACKAGE);
 	atexit(close_stdout);
 
-	while ((c = getopt_long(argc, argv, "hVlmnovx", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "hVlmnovxZ", longopts, NULL)) != -1) {
 		switch(c) {
 		case 'h':
 			usage();
@@ -398,6 +439,9 @@ main(int argc, char **argv)
 			break;
 		case 'v':
 			flags |= NAMEI_VERTICAL;
+			break;
+		case 'Z':
+			flags |= NAMEI_CONTEXT;
 			break;
 		default:
 			errtryhelp(EXIT_FAILURE);
